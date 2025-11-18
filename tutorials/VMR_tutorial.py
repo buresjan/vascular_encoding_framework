@@ -15,9 +15,12 @@ import os
 import numpy as np
 import pyvista as pv
 import vascular_encoding_framework as vef
-from vascular_encoding_framework.utils.graphic import plot_adapted_frame
 
-case_path = f"{os.path.expanduser('~')}/tmp/0008_H_AO_H"  # Modify if needed
+# Prefer bundled dataset; fall back to user path if not found.
+_here = os.path.dirname(__file__)
+case_path = os.path.join(_here, "0008_H_AO_H")
+if not os.path.isdir(case_path):
+    case_path = f"{os.path.expanduser('~')}/tmp/0008_H_AO_H"  # Modify if needed
 mesh_path = os.path.join(case_path, "Meshes", "0091_0001.vtp")
 
 
@@ -31,20 +34,25 @@ vmesh = vef.VascularMesh(mesh)
 
 # Once initialized, since the mesh is open,the boundary tree is initialized without hierarchy
 # Hence, let us inspect the ids attributed to each boundary to define the hierarchy.
-vmesh.plot_boundary_ids()
+SHOW_BOUNDARIES = True
+if SHOW_BOUNDARIES:
+    vmesh.plot_boundary_ids()
+print("Available boundary ids:", vmesh.boundaries.enumerate())
 
 # After visualizing it, we can define the desired hierarchy as follows:
+# Note: Current VEF assigns ids like 'B0', 'B1', ...
+# Adjust the mapping below to match the ids shown above.
 hierarchy = {
-    "5": {
-        "id": "5",
+    "B5": {
+        "id": "B5",
         "parent": None,
-        "children": {"0"},
+        "children": {"B0"},
     },
-    "0": {"id": "0", "parent": "5", "children": {"3", "4", "1"}},
-    "3": {"id": "3", "parent": "0", "children": {"2"}},
-    "4": {"id": "4", "parent": "0", "children": {}},
-    "1": {"id": "1", "parent": "0", "children": {}},
-    "2": {"id": "2", "parent": "3", "children": {}},
+    "B0": {"id": "B0", "parent": "B5", "children": {"B3", "B4", "B1"}},
+    "B3": {"id": "B3", "parent": "B0", "children": {"B2"}},
+    "B4": {"id": "B4", "parent": "B0", "children": {}},
+    "B1": {"id": "B1", "parent": "B0", "children": {}},
+    "B2": {"id": "B2", "parent": "B3", "children": {}},
 }
 vmesh.set_boundary_data(hierarchy)
 
@@ -62,7 +70,7 @@ cl_domain = vef.centerline.extract_centerline_domain(
 cp_xtractor = vef.centerline.CenterlinePathExtractor()
 cp_xtractor.adjacency_factor = 0.5
 # Again setting this argument to true, results in some plots of the procedure..
-cp_xtractor.debug = True
+cp_xtractor.debug = False
 cp_xtractor.set_centerline_domain(cl_domain)
 cp_xtractor.set_vascular_mesh(vmesh, update_boundaries=True)
 cp_xtractor.compute_paths()
@@ -79,21 +87,25 @@ knot_params = {
 }
 
 # We are in conditions of defining the centerline tree.
-cl_tree = vef.CenterlineTree.from_multiblock_paths(
-    cp_xtractor.paths, knots={k: v["cl_knots"] for k, v in knot_params.items()}
-)
+# In the current API, branch-specific parameters are passed under each branch id.
+branch_specific = {
+    k: {"n_knots": v["cl_knots"]}
+    for k, v in knot_params.items()
+    if v["cl_knots"] is not None
+}
+cl_tree = vef.CenterlineTree.from_multiblock_paths(cp_xtractor.paths, **branch_specific)
 
 # The centerline on its own allows us to compute some useful fields like the Vessel Coordinates, but
 # first, let's check that centerline has been well computed and let us inspect how the adapted frame
-# looks like.
-plot_adapted_frame(cl_tree, vmesh, scale=0.5)
+# looks like. The plotting helper is now a method of CenterlineTree.
+cl_tree.plot_adapted_frame(vmesh=vmesh, scale=0.5)
 
 # The computation of centerline association and the vessel coordinates usually takes a while.
 bid = [
     cl_tree.get_centerline_association(
         p=vmesh.points[i],
         n=vmesh.get_array(name="Normals", preference="point")[i],
-        method="scalars",
+        method="scalar",
         thrs=60,
     )
     for i in range(vmesh.n_points)

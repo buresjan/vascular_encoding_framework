@@ -1,0 +1,24 @@
+name: vef
+channels:
+  - conda-forge
+channel_priority: strict
+dependencies:
+  - python=3.10
+  - pip
+
+  # Runtime deps (from pyproject + lock)
+  - numpy=2.0.*
+  - scipy=1.13.*
+  - scikit-learn=1.6.*
+  - matplotlib=3.9.*
+  - pillow
+  - pooch
+  - scooby
+  - typing-extensions
+  - requests
+  - pyvista=0.44.*
+  - vtk=9.3.*
+
+  # Dev tools (optional; remove if you don’t want them in the env)
+  - pre-commit=4.1.0
+  - ruff=0.11.8
