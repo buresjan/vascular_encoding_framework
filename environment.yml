@@ -22,3 +22,7 @@ dependencies:
   # Dev tools (optional; remove if you don’t want them in the env)
   - pre-commit=4.1.0
   - ruff=0.11.8
+
+  # Install this package in editable mode
+  - pip:
+      - -e .
