@@ -584,7 +584,7 @@ class Boundaries(Tree):
             return None
 
         bds_dict = read_json(fname)
-        boundaries = Boundaries.from_dict(bds_dict=bds_dict)
+        boundaries = Boundaries.from_dict(bds=bds_dict)
         mb_name = fname_ + ".vtm"
 
         if os.path.exists(mb_name):
