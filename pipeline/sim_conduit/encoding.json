@@ -1,0 +1,10 @@
+{
+ "metadata": {
+ "type": "encoding",
+ "version": "0.0.1"
+},
+ "method": "decoupling",
+ "tau_knots": 12,
+ "theta_knots": 22,
+ "laplacian_penalty": 0.1,
+ "insertion": 0.0}

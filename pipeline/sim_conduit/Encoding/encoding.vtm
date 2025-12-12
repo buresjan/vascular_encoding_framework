@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<VTKFile type="vtkMultiBlockDataSet" version="1.0" byte_order="LittleEndian" header_type="UInt32" compressor="vtkZLibDataCompressor">
+  <vtkMultiBlockDataSet>
+    <Block name="B1" index="0">
+      <DataSet index="0" name="centerline" file="encoding/encoding_0.vtp"/>
+      <DataSet index="1" name="wall" file="encoding/encoding_1.vtp"/>
+    </Block>
+  </vtkMultiBlockDataSet>
+</VTKFile>

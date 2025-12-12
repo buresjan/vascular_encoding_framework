@@ -1,0 +1,22 @@
+{
+ "metadata": {
+ "type": "centerline",
+ "version": "0.0.1"
+},
+ "params_domain": {
+ "method": "seekers",
+ "reduction_rate": 0.85,
+ "smooth_iters": 250,
+ "eps": 0.0005,
+ "check_dirs": true,
+ "check_inside": false,
+ "multi_ray_trace": false},
+ "params_path": {
+ "mode": "i2o",
+ "reverse": false,
+ "adjacency_factor": 0.5,
+ "pass_pointid": true},
+ "n_knots": 15,
+ "curvature_penalty": 3.0,
+ "graft_rate": 0.0,
+ "force_extremes": true}
