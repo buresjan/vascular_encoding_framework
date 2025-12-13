@@ -9,8 +9,6 @@ with the deformed partner geometry.
 - Existing ground-truth data: `sim_conduit/Encoding/encoding.vtm`, `sim_conduit/Encoding/vcs_map.vtp`
 - Partner assets: `not_conduit_extruded_canon.stl`, `basic_loop_canon.vtp`
 - Rim extraction tolerance: `rim_tol`
-- Optional outlet taper: `taper_enabled`, `taper_end`, `taper_length`, `taper_scale`,
-  `taper_segments`, `taper_tol_ratio`
 - Voxel remesh pitch for the repair step: `repair_pitch` (None = auto from size)
 
 ### Steps
@@ -23,10 +21,10 @@ with the deformed partner geometry.
 5. **Deform partner**: deform `not_conduit_extruded_canon.stl` so its rim matches the bumped rim
    (`deform.deform_rim_to_target`, with tunable `r1`, `r2` falloff).
 6. **Append**: merge the bumped STL and deformed partner STL into a combined geometry.
-7. **(Optional) Taper one outlet**: extrude + taper a chosen axis-aligned rim by a set length and
-   scale (default: +14 mm, 75% radius).
-8. **Clip & align**: cut the bottom with a plane parallel to XY (offset above min Z), rebase to
+7. **Clip & align**: cut the bottom with a plane parallel to XY (offset above min Z), rebase to
    Z=0, triangulate, and clean.
+8. **Taper an outlet**: run `taper_stl_end` on the clipped STL to extrude and shrink a chosen open
+   end (e.g., `XZ_minY`, `YZ_maxX`, `XY_minZ`), controlling length, number of segments, and scale.
 9. **Repair via voxel remesh**: run `pipeline/repair.py` to cap → voxelize → marching cubes and
    reopen the 4 outlets, producing the final open STL `sim_<hash>.stl` in `output_dir`.
 
@@ -48,13 +46,10 @@ final_path, uid = run_pipeline(
     deform_r1=5.0,
     deform_r2=20.0,
     clip_offset=0.5,
-    # Optional outlet taper:
-    taper_enabled=True,
-    taper_end="xz_min_y",  # yz_min_x | yz_max_x | xz_min_y | xz_max_y | xy_min_z | xy_max_z
-    taper_length=14.0,
-    taper_scale=0.75,
-    taper_segments=12,
-    taper_tol_ratio=0.02,
+    taper_end="auto",  # or YZ_minX/YZ_maxX/XZ_minY/XZ_maxY/XY_minZ/XY_maxZ
+    taper_length_mm=14.0,
+    taper_target_scale=0.5,
+    taper_sections=24,
     repair_pitch=None,  # auto-pick based on geometry if None
     output_dir=Path("outputs"),
 )

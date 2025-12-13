@@ -4,13 +4,13 @@ This subfolder holds the minimal building blocks to:
 1) rebuild the sim_conduit centerline/radius,
 2) bump the VCS radius at a chosen `(tau0, theta0, bump_amp)`,
 3) extract the rim,
-4) deform the partner STL, append, optionally taper one outlet, clip, and repair a combined STL.
+4) deform the partner STL, append, clip, and repair a combined STL.
 
 ### Inputs
 - Ground truth (unchanged): `sim_conduit/Encoding/encoding.vtm`, `sim_conduit/Encoding/vcs_map.vtp`
 - Partner assets: `not_conduit_extruded_canon.stl`, `basic_loop_canon.vtp`
-- Parameters: `tau0`, `theta0`, `bump_amp` (plus optional widths, rim tolerance, deformation/clip
-  settings, and optional outlet taper controls)
+- Parameters: `tau0`, `theta0`, `bump_amp` (plus optional widths, rim tolerance, and deformation/clip
+  settings)
 
 ### Use from Python
 ```python
@@ -27,13 +27,6 @@ final_path, uid = run_pipeline(
     deform_r1=5.0,
     deform_r2=20.0,
     clip_offset=0.5,
-    # Optional outlet tapering:
-    taper_enabled=True,
-    taper_end="xz_min_y",  # yz_min_x | yz_max_x | xz_min_y | xz_max_y | xy_min_z | xy_max_z
-    taper_length=14.0,
-    taper_scale=0.75,
-    taper_segments=12,
-    taper_tol_ratio=0.02,
     repair_pitch=None,  # auto-pick based on geometry if None
     output_dir=Path("outputs"),
     # optional overrides:
@@ -54,10 +47,8 @@ print("Wrote:", final_path, "UID:", uid)
 4. Converts the bumped map to STL.
 5. Deforms the partner STL so its rim matches the bumped rim (`r1`/`r2` control falloff).
 6. Appends both STLs.
-7. Optionally extrudes one of the 4 axis-aligned outlets and smoothly tapers it (default: +14 mm,
-   75% radius at the tip).
-8. Clips from the bottom (offset above min Z), rebases to Z=0, triangulates/cleans.
-9. Repairs via voxel remeshing (caps → voxelize → marching cubes → reopen the 4 outlets) to
+7. Clips from the bottom (offset above min Z), rebases to Z=0, triangulates/cleans.
+8. Repairs via voxel remeshing (caps → voxelize → marching cubes → reopen the 4 outlets) to
    produce the final open STL `sim_<hash>.stl` in `output_dir`.
 
 Temporary files now live in a per-run temp folder under `output_dir` (prefix

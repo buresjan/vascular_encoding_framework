@@ -1,6 +1,6 @@
 """
 High-level pipeline to bump the sim_conduit VCS radius, extract rims, deform a partner STL,
-combine meshes, optionally taper an outlet, clip, and repair the final geometry.
+combine meshes, clip, taper an open end, and repair the final geometry.
 """
 
 from __future__ import annotations
@@ -29,13 +29,10 @@ def run_pipeline(
     deform_r1: float = 5.0,
     deform_r2: float = 20.0,
     clip_offset: float = 0.5,
-    taper_enabled: bool = False,
-    taper_end: str = "yz_min_x",
-    taper_length: float = 14.0,
-    taper_scale: float = 0.75,
-    taper_segments: int = 12,
-    taper_tol_ratio: float = 0.02,
-    taper_verbose: bool = True,
+    taper_end: str = "auto",
+    taper_length_mm: float = 14.0,
+    taper_target_scale: float = 0.5,
+    taper_sections: int = 24,
     repair_pitch: float | None = None,
     repair_closing_radius: int = 1,
     repair_target_voxels_min_dim: int = 80,
@@ -61,9 +58,15 @@ def run_pipeline(
     3) Convert bumped VTP to STL.
     4) Deform partner STL to match new rim.
     5) Append partner and bumped STLs.
-    6) (Optional) Taper one chosen open end.
-    7) Clip bottom, rebase to Z=0.
+    6) Clip bottom, rebase to Z=0.
+    7) Taper a chosen open end on the clipped STL.
     8) Repair merged surface while keeping the 4 outlets open via voxel remeshing.
+
+    Tapering options:
+    - taper_end chooses which open end to extrude; use "auto" for the largest perimeter or pick
+      among YZ_minX/YZ_maxX/XZ_minY/XZ_maxY/XY_minZ/XY_maxZ.
+    - taper_length_mm / taper_target_scale / taper_sections control taper length, final scale, and
+      the number of interpolation segments.
     """
     params = dict(
         tau0=tau0,
@@ -75,12 +78,10 @@ def run_pipeline(
         deform_r1=deform_r1,
         deform_r2=deform_r2,
         clip_offset=clip_offset,
-        taper_enabled=taper_enabled,
         taper_end=taper_end,
-        taper_length=taper_length,
-        taper_scale=taper_scale,
-        taper_segments=taper_segments,
-        taper_tol_ratio=taper_tol_ratio,
+        taper_length_mm=taper_length_mm,
+        taper_target_scale=taper_target_scale,
+        taper_sections=taper_sections,
         repair_pitch=repair_pitch,
         repair_closing_radius=repair_closing_radius,
         repair_target_voxels_min_dim=repair_target_voxels_min_dim,
@@ -153,30 +154,25 @@ def run_pipeline(
     combined_tmp = tmp / f"sim_{uid}_tmp.stl"
     append_meshes(sim_stl, partner_deformed, combined_tmp)
 
-    # 6) Optional outlet taper
-    clip_source = combined_tmp
-    if taper_enabled:
-        tapered_tmp = tmp / f"sim_{uid}_tmp_tapered.stl"
-        taper_stl_end(
-            combined_tmp,
-            tapered_tmp,
-            end_name=taper_end,
-            length=taper_length,
-            scale_target=taper_scale,
-            segments=taper_segments,
-            tol_ratio=taper_tol_ratio,
-            verbose=taper_verbose,
-        )
-        clip_source = tapered_tmp
-
-    # 7) Clip and rebase to Z=0
+    # 6) Clip and rebase to Z=0
     clipped = tmp / f"sim_{uid}_clipped.stl"
-    clip_bottom(clip_source, clipped, clip_offset=clip_offset)
+    clip_bottom(combined_tmp, clipped, clip_offset=clip_offset)
+
+    # 7) Taper the selected open end to smooth into the repair step
+    tapered = tmp / f"sim_{uid}_tapered.stl"
+    taper_stl_end(
+        input_stl_path=str(clipped),
+        output_stl_path=str(tapered),
+        target_end=taper_end,
+        extrusion_length_mm=taper_length_mm,
+        target_scale=taper_target_scale,
+        n_sections=taper_sections,
+    )
 
     # 8) Repair via voxel remeshing
     repaired = tmp / f"sim_{uid}_repaired.stl"
     pitch_used = repair_surface_four_open_ends(
-        clipped,
+        tapered,
         repaired,
         pitch=repair_pitch,
         target_voxels_min_dim=repair_target_voxels_min_dim,
