@@ -1,15 +1,17 @@
 ## VEF Bump-to-Geometry Pipeline
 
 This pipeline glues together the modular pieces already present in the repo to take a bump
-specification in VCS space and produce a clipped + watertight STL that combines the bumped
-sim_conduit geometry with the deformed partner geometry.
+specification in VCS space and produce a clipped STL that combines the bumped sim_conduit geometry
+with the deformed partner geometry.
 
 ### Inputs
 - `tau0`, `theta0`, `bump_amp` (and widths `sigma_t`, `sigma_theta`)
-- `voxel_pitch` for the watertight voxel rebuild
 - Existing ground-truth data: `sim_conduit/Encoding/encoding.vtm`, `sim_conduit/Encoding/vcs_map.vtp`
 - Partner assets: `not_conduit_extruded_canon.stl`, `basic_loop_canon.vtp`
 - Rim extraction tolerance: `rim_tol`
+- Optional outlet taper: `taper_enabled`, `taper_end`, `taper_length`, `taper_scale`,
+  `taper_segments`, `taper_tol_ratio`
+- Voxel remesh pitch for the repair step: `repair_pitch` (None = auto from size)
 
 ### Steps
 1. **Build encoding primitives**: load the saved spline metadata and reconstruct the centerline and
@@ -21,15 +23,15 @@ sim_conduit geometry with the deformed partner geometry.
 5. **Deform partner**: deform `not_conduit_extruded_canon.stl` so its rim matches the bumped rim
    (`deform.deform_rim_to_target`, with tunable `r1`, `r2` falloff).
 6. **Append**: merge the bumped STL and deformed partner STL into a combined geometry.
-7. **Clip & align**: cut the bottom with a plane parallel to XY (offset above min Z), rebase to
+7. **(Optional) Taper one outlet**: extrude + taper a chosen axis-aligned rim by a set length and
+   scale (default: +14 mm, 75% radius).
+8. **Clip & align**: cut the bottom with a plane parallel to XY (offset above min Z), rebase to
    Z=0, triangulate, and clean.
-8. **Repair/cap/voxel-rebuild**: run the `mesh_fix.py` pipeline to patch small cracks (keeping the
-   4 primary outlets open), cap those outlets, and rebuild a watertight exterior using marching
-   cubes from a voxelization with pitch `voxel_pitch`. The watertight STL is saved as
-   `sim_<hash>.stl` to `output_dir`.
+9. **Repair via voxel remesh**: run `pipeline/repair.py` to cap → voxelize → marching cubes and
+   reopen the 4 outlets, producing the final open STL `sim_<hash>.stl` in `output_dir`.
 
-Temporary artifacts live in a temp directory and are removed after the run; the output directory
-only receives the watertight combined STL.
+Temporary artifacts live in a per-run temp directory under `output_dir` (prefix `sim_<hash>_tmp_`)
+and are kept alongside the final clipped STL.
 
 ### Usage (from Python)
 ```python
@@ -46,8 +48,14 @@ final_path, uid = run_pipeline(
     deform_r1=5.0,
     deform_r2=20.0,
     clip_offset=0.5,
-    hole_size=1000.0,
-    voxel_pitch=1.0,
+    # Optional outlet taper:
+    taper_enabled=True,
+    taper_end="xz_min_y",  # yz_min_x | yz_max_x | xz_min_y | xz_max_y | xy_min_z | xy_max_z
+    taper_length=14.0,
+    taper_scale=0.75,
+    taper_segments=12,
+    taper_tol_ratio=0.02,
+    repair_pitch=None,  # auto-pick based on geometry if None
     output_dir=Path("outputs"),
 )
 print("wrote", final_path, "uid", uid)
