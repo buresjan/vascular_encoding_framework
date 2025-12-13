@@ -17,15 +17,16 @@ def hash_params(params: dict, length: int = 8) -> str:
 
 
 def stl_from_vtp(vtp_path: Path, stl_path: Path) -> Path:
+    """Convert a VTP surface to STL."""
     mesh = pv.read(str(vtp_path))
     mesh.save(str(stl_path))
     return stl_path
 
 
 def append_meshes(stl_a: Path, stl_b: Path, out_path: Path) -> Path:
+    """Merge two STL surfaces and clean overlapping points."""
     a = pv.read(str(stl_a))
     b = pv.read(str(stl_b))
-    # merged = a.merge(b, merge_points=False)
     merged = a.merge(b, merge_points=True).clean()
     merged.save(str(out_path))
     return out_path
