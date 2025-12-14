@@ -13,9 +13,19 @@ from pipeline import run_pipeline
 DEFAULT_RUN_KWARGS: Dict[str, Any] = {
     "tau0": 0.0,
     "theta0": 3.7,
-    "bump_amp": 2.3,
+    "bump_amp": 0.0,
     "sigma_t": 0.05,
     "sigma_theta": 0.35,
+    "bumps": [
+        {"tau0": 0.0, "theta0": 3.7, "amp": 2.3, "sigma_t": 0.05, "sigma_theta": 0.35},
+        {"tau0": 0.0, "theta0": 0.7, "amp": -3.0, "sigma_t": 0.05, "sigma_theta": 0.55},
+    ],
+    "size_scale": 0.9,
+    "straighten_strength": 0.15,
+    "straighten_exponent": 2.0,
+    "straighten_preserve": 5,
+    "rho_min": 1e-3,
+    "radius_fit_laplacian": 1e-3,
     "rim_tol": 1e-3,
     "deform_r1": 5.0,
     "deform_r2": 20.0,
@@ -30,6 +40,7 @@ DEFAULT_RUN_KWARGS: Dict[str, Any] = {
     "vcs_map_path": Path("pipeline/sim_conduit/Encoding/vcs_map.vtp"),
     "partner_stl": Path("pipeline/not_conduit_extruded_canon.stl"),
     "partner_orig_rim": Path("pipeline/basic_loop_canon.vtp"),
+    "keep_temp_files": False,
 }
 
 

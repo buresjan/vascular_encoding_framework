@@ -1,22 +1,38 @@
 """
 High-level pipeline to bump the sim_conduit VCS radius, extract rims, deform a partner STL,
-combine meshes, clip, taper an open end, and repair the final geometry.
+combine meshes, clip, taper an open end, repair, and cap the final geometry.
 """
 
 from __future__ import annotations
 
+import sys
+import shutil
 import tempfile
 from pathlib import Path
 from dataclasses import dataclass
+from typing import Sequence
 
 import pyvista as pv
 
-from .bump import build_centerline, build_radius, load_encoding, write_bumped_png, write_bumped_vtp
+# Allow this module to be executed both as part of the package and as a script.
+if __package__ is None or __package__ == "":
+    ROOT = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(ROOT))
+    __package__ = "pipeline"
+
+from .cap import CapReport, cap_four_open_axis_aligned_ends
+from .bump import load_encoding
 from .deform import deform_rim_to_target
 from .mesh_ops import append_meshes, clip_bottom, hash_params, stl_from_vtp
 from .repair import repair_surface_four_open_ends
 from .rim import extract_rim
 from .taper_stl_end import taper_stl_end
+from .transformations import (
+    BumpSpec,
+    normalize_bump_specs,
+    save_encoding,
+    transform_vcs_map,
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +53,8 @@ class PipelinePaths:
     clipped: Path
     tapered: Path
     repaired: Path
+    capped: Path
+    encoding: Path
 
     @classmethod
     def build(cls, uid: str, output_dir: Path, temp_dir: Path | None) -> "PipelinePaths":
@@ -61,47 +79,75 @@ class PipelinePaths:
             clipped=tmp_dir / f"sim_{uid}_clipped.stl",
             tapered=tmp_dir / f"sim_{uid}_tapered.stl",
             repaired=tmp_dir / f"sim_{uid}_repaired.stl",
+            capped=tmp_dir / f"sim_{uid}_capped.stl",
+            encoding=output_dir / f"sim_{uid}_encoding.vtm",
         )
+
+
+def _cleanup_temp_dir(temp_dir: Path, final: Path, verbose: bool):
+    """
+    Remove the temporary folder unless it contains the final output.
+    """
+    temp_dir = temp_dir.resolve()
+    final = final.resolve()
+
+    try:
+        final.relative_to(temp_dir)
+        final_inside_temp = True
+    except ValueError:
+        final_inside_temp = False
+
+    if final_inside_temp:
+        if verbose:
+            print(f"[cleanup] Skipping removal of temp dir {temp_dir} because it holds the final STL.")
+        return
+
+    if not temp_dir.exists():
+        return
+
+    try:
+        if verbose:
+            print(f"[cleanup] Removing temp dir {temp_dir}")
+        shutil.rmtree(temp_dir)
+    except OSError as exc:
+        if verbose:
+            print(f"[cleanup] Failed to remove temp dir {temp_dir}: {exc}")
 
 
 def _build_encoding_primitives(encoding_path: Path):
     cl_meta, rad_meta = load_encoding(encoding_path)
-    cl = build_centerline(cl_meta)
-    rd = build_radius(rad_meta)
-    return cl, rd
+    return cl_meta, rad_meta
 
 
-def _apply_bump(
-    cl,
-    rd,
+def _apply_transformations(
+    cl_meta: dict,
+    rad_meta: dict,
     vcs_map_path: Path,
     paths: PipelinePaths,
     *,
-    tau0: float,
-    theta0: float,
-    bump_amp: float,
-    sigma_t: float,
-    sigma_theta: float,
+    bump_specs: Sequence[BumpSpec],
+    size_scale: float,
+    straighten_strength: float,
+    straighten_exponent: float,
+    straighten_preserve: int,
+    rho_min: float,
+    radius_fit_laplacian: float,
 ):
-    write_bumped_png(
-        rd,
-        png_path=paths.bump_png,
-        tau0=tau0,
-        theta0=theta0,
-        amp=bump_amp,
-        sigma_t=sigma_t,
-        sigma_th=sigma_theta,
+    cl, radius, _ = transform_vcs_map(
+        cl_meta,
+        rad_meta,
+        vcs_map_path,
+        paths.bumped_vtp,
+        paths.bump_png,
+        bumps=bump_specs,
+        size_scale=size_scale,
+        straighten_strength=straighten_strength,
+        straighten_exponent=straighten_exponent,
+        straighten_preserve=straighten_preserve,
+        rho_min=rho_min,
+        radius_fit_laplacian=radius_fit_laplacian,
     )
-    write_bumped_vtp(
-        cl,
-        vcs_map_path=vcs_map_path,
-        out_path=paths.bumped_vtp,
-        tau0=tau0,
-        theta0=theta0,
-        amp=bump_amp,
-        sigma_t=sigma_t,
-        sigma_th=sigma_theta,
-    )
+    save_encoding(cl, radius, paths.encoding)
 
 
 def _extract_rim_and_export_stl(
@@ -190,12 +236,36 @@ def _repair_and_save(
     )
 
 
+def _cap_four_axis_aligned_ends(
+    repaired_open: Path,
+    capped_out: Path,
+    *,
+    merge_digits: int,
+    plane_range_tol: float | None,
+    verbose: bool,
+) -> CapReport:
+    return cap_four_open_axis_aligned_ends(
+        input_stl=repaired_open,
+        output_capped_stl=capped_out,
+        merge_digits=merge_digits,
+        plane_range_tol=plane_range_tol,
+        verbose=verbose,
+    )
+
+
 def run_pipeline(
     tau0: float,
     theta0: float,
     bump_amp: float,
     sigma_t: float = 0.05,
     sigma_theta: float = 0.25,
+    bumps: Sequence[BumpSpec | dict] | None = None,
+    size_scale: float = 1.0,
+    straighten_strength: float = 0.0,
+    straighten_exponent: float = 2.0,
+    straighten_preserve: int = 4,
+    rho_min: float = 1e-3,
+    radius_fit_laplacian: float = 1e-3,
     rim_tol: float = 1e-3,
     deform_r1: float = 5.0,
     deform_r2: float = 20.0,
@@ -213,6 +283,7 @@ def run_pipeline(
     repair_verbose: bool = True,
     output_dir: Path = Path("."),
     temp_dir: Path | None = None,
+    keep_temp_files: bool = True,
     *,
     encoding_path: Path = Path("pipeline/sim_conduit/Encoding/encoding.vtm"),
     vcs_map_path: Path = Path("pipeline/sim_conduit/Encoding/vcs_map.vtp"),
@@ -220,31 +291,51 @@ def run_pipeline(
     partner_orig_rim: Path = Path("pipeline/basic_loop_canon.vtp"),
 ) -> tuple[Path, str]:
     """
-    Execute full pipeline and return path to the repaired combined STL and the parameter hash.
-    Intermediates are kept in a temp directory (default: per-run folder under output_dir).
+    Execute full pipeline and return path to the capped combined STL and the parameter hash.
+    Intermediates are written to a temp directory (default: per-run folder under output_dir) and
+    can be deleted after completion via keep_temp_files=False.
 
     Steps:
-    1) Bump VCS radius by (tau0, theta0, bump_amp) -> bumped VTP + PNG.
-    2) Extract rim at tau≈0 from bumped VTP.
-    3) Convert bumped VTP to STL.
+    1) Apply VCS transforms (multi-bump, global scale, straightening) to build a new encoding +
+       VCS map + preview PNG.
+    2) Extract rim at tau≈0 from the transformed VTP.
+    3) Convert transformed VTP to STL.
     4) Deform partner STL to match new rim.
-    5) Append partner and bumped STLs.
+    5) Append partner and transformed STLs.
     6) Clip bottom, rebase to Z=0.
     7) Taper a chosen open end on the clipped STL.
     8) Repair merged surface while keeping the 4 outlets open via voxel remeshing.
+    9) Cap the 4 axis-aligned outlets and report watertightness of the final STL.
 
     Tapering options:
     - taper_end chooses which open end to extrude; use "auto" for the largest perimeter or pick
       among YZ_minX/YZ_maxX/XZ_minY/XZ_maxY/XY_minZ/XY_maxZ.
     - taper_length_mm / taper_target_scale / taper_sections control taper length, final scale, and
       the number of interpolation segments.
+    - set keep_temp_files=False to delete the per-run temp folder once the final STL is saved.
     """
+    bump_specs = normalize_bump_specs(
+        bumps,
+        tau0=tau0,
+        theta0=theta0,
+        bump_amp=bump_amp,
+        sigma_t=sigma_t,
+        sigma_theta=sigma_theta,
+    )
+
     params = dict(
         tau0=tau0,
         theta0=theta0,
         bump_amp=bump_amp,
         sigma_t=sigma_t,
         sigma_theta=sigma_theta,
+        bumps=[spec.__dict__ for spec in bump_specs],
+        size_scale=size_scale,
+        straighten_strength=straighten_strength,
+        straighten_exponent=straighten_exponent,
+        straighten_preserve=straighten_preserve,
+        rho_min=rho_min,
+        radius_fit_laplacian=radius_fit_laplacian,
         rim_tol=rim_tol,
         deform_r1=deform_r1,
         deform_r2=deform_r2,
@@ -265,22 +356,24 @@ def run_pipeline(
     paths = PipelinePaths.build(uid, output_dir, temp_dir)
 
     # Build encoding primitives
-    cl, rd = _build_encoding_primitives(encoding_path)
+    cl_meta, rad_meta = _build_encoding_primitives(encoding_path)
 
-    # 1) Bump encoding
-    _apply_bump(
-        cl,
-        rd,
+    # 1) Apply VCS transformations (multi-bump/scale/straighten) and write encoding artifacts
+    _apply_transformations(
+        cl_meta,
+        rad_meta,
         vcs_map_path,
         paths,
-        tau0=tau0,
-        theta0=theta0,
-        bump_amp=bump_amp,
-        sigma_t=sigma_t,
-        sigma_theta=sigma_theta,
+        bump_specs=bump_specs,
+        size_scale=size_scale,
+        straighten_strength=straighten_strength,
+        straighten_exponent=straighten_exponent,
+        straighten_preserve=straighten_preserve,
+        rho_min=rho_min,
+        radius_fit_laplacian=radius_fit_laplacian,
     )
 
-    # 2) Rim extraction and STL conversion
+    # 2-3) Rim extraction and STL conversion
     _extract_rim_and_export_stl(
         paths.bumped_vtp,
         paths.rim,
@@ -288,7 +381,7 @@ def run_pipeline(
         rim_tol=rim_tol,
     )
 
-    # 3) Deform partner STL to match rim
+    # 4) Deform partner STL to match rim
     _deform_partner_to_rim(
         partner_stl,
         partner_orig_rim,
@@ -298,7 +391,7 @@ def run_pipeline(
         deform_r2=deform_r2,
     )
 
-    # 5) Combine meshes and clip
+    # 5-6) Combine meshes and clip
     _append_and_clip(
         paths.sim_stl,
         paths.partner_deformed,
@@ -332,7 +425,40 @@ def run_pipeline(
     if repair_verbose:
         print(f"[repair] pitch used: {pitch_used}")
 
+    # 9) Cap the four axis-aligned outlets and report watertightness
+    cap_report = _cap_four_axis_aligned_ends(
+        paths.repaired,
+        paths.capped,
+        merge_digits=repair_merge_digits,
+        plane_range_tol=repair_plane_range_tol,
+        verbose=repair_verbose,
+    )
+    if not repair_verbose:
+        print(
+            f"[cap] watertight={cap_report.watertight} "
+            f"(boundary_loops={cap_report.boundary_loops}, "
+            f"boundary_edges={cap_report.boundary_edges}, "
+            f"nonmanifold_edges={cap_report.nonmanifold_edges})"
+        )
+
     # Reload with pyvista for consistent STL writing
-    pv.read(str(paths.repaired)).save(str(paths.final))
+    pv.read(str(paths.capped)).save(str(paths.final))
+
+    if not keep_temp_files:
+        encoding_candidates = {paths.encoding, paths.encoding.with_suffix("")}
+        for enc_path in encoding_candidates:
+            if not enc_path.exists():
+                continue
+            try:
+                if enc_path.is_dir():
+                    shutil.rmtree(enc_path)
+                else:
+                    enc_path.unlink()
+                if repair_verbose:
+                    print(f"[cleanup] Removed encoding artifact at {enc_path}")
+            except OSError as exc:
+                if repair_verbose:
+                    print(f"[cleanup] Failed to remove encoding artifact {enc_path}: {exc}")
+        _cleanup_temp_dir(paths.temp_dir, paths.final, verbose=repair_verbose)
 
     return paths.final, uid
