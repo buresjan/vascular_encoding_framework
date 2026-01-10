@@ -285,6 +285,8 @@ def run_pipeline(
     temp_dir: Path | None = None,
     keep_temp_files: bool = True,
     *,
+    combined_output: Path | None = None,
+    tapered_output: Path | None = None,
     encoding_path: Path = Path("pipeline/sim_conduit/Encoding/encoding.vtm"),
     vcs_map_path: Path = Path("pipeline/sim_conduit/Encoding/vcs_map.vtp"),
     partner_stl: Path = Path("pipeline/not_conduit_extruded_canon.stl"),
@@ -306,6 +308,10 @@ def run_pipeline(
     7) Taper a chosen open end on the clipped STL.
     8) Repair merged surface while keeping the 4 outlets open via voxel remeshing.
     9) Cap the 4 axis-aligned outlets and report watertightness of the final STL.
+
+    If combined_output is provided, a copy of the merged STL from step 6 (pre-clip) is written
+    to that path. If tapered_output is provided, a copy of the tapered STL from step 7
+    (pre-voxelization) is written to that path.
 
     Tapering options:
     - taper_end chooses which open end to extrude; use "auto" for the largest perimeter or pick
@@ -399,6 +405,13 @@ def run_pipeline(
         paths.clipped,
         clip_offset=clip_offset,
     )
+    if combined_output is not None:
+        combined_output = Path(combined_output)
+        combined_output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copyfile(paths.combined_tmp, combined_output)
+        except shutil.SameFileError:
+            pass
 
     # 7) Taper the selected open end to smooth into the repair step
     _taper_selected_end(
@@ -409,6 +422,13 @@ def run_pipeline(
         taper_target_scale=taper_target_scale,
         taper_sections=taper_sections,
     )
+    if tapered_output is not None:
+        tapered_output = Path(tapered_output)
+        tapered_output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copyfile(paths.tapered, tapered_output)
+        except shutil.SameFileError:
+            pass
 
     # 8) Repair via voxel remeshing
     pitch_used = _repair_and_save(
