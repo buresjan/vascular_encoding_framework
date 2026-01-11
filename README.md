@@ -24,6 +24,10 @@ This project contains the python implementation of the Vascular Encoding Framewo
     ```
 3. To check if the installation succeeded it may be worth trying to run a tutorial.
 
+## Pipeline config (vef_pipeline)
+For the config-driven pipeline entry point, parameter reference, and usage examples, see
+`pipeline/README.md`. A full sample config is provided at `vef_config.sample.json`.
+
 ## Citing the project.
 Right now, the two main ways to cite this project are citing the repo:
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Mapping, Tuple
 
 import numpy as np
 import trimesh
@@ -316,6 +316,102 @@ def reopen_four_ends(mesh_closed: trimesh.Trimesh, ends: List[EndLoop]) -> trime
     out.remove_unreferenced_vertices()
     out.fix_normals()
     return out
+
+
+def extend_open_ends_to_planes(
+    input_stl: str | Path,
+    output_stl: str | Path,
+    *,
+    plane_targets: Mapping[str, float] | None,
+    plane_range_tol: float | None = None,
+    merge_digits: int = 6,
+    extension_sections: int = 2,
+    verbose: bool = True,
+) -> None:
+    """
+    Extend axis-aligned open ends to target planes, using outlet labels as keys.
+
+    plane_targets expects keys like "YZ_minX", "XZ_minY", "XY_minZ", "XY_maxZ".
+    """
+    if not plane_targets:
+        return
+
+    if not isinstance(plane_targets, Mapping):
+        raise TypeError("plane_targets must be a mapping of outlet labels to plane values.")
+
+    input_stl = Path(input_stl)
+    output_stl = Path(output_stl)
+
+    mesh = trimesh.load_mesh(str(input_stl), process=False)
+    mesh.merge_vertices(digits_vertex=merge_digits)
+    mesh = remove_duplicate_faces_compat(mesh)
+    mesh = remove_degenerate_faces_compat(mesh)
+    mesh.remove_unreferenced_vertices()
+
+    ends = find_four_axis_end_loops(mesh, plane_range_tol=plane_range_tol)
+    bounds = mesh.bounds
+    axis_to_plane = {0: "YZ", 1: "XZ", 2: "XY"}
+    axis_to_label = {0: "X", 1: "Y", 2: "Z"}
+
+    labeled: Dict[str, Tuple[EndLoop, float]] = {}
+    for end in ends:
+        dist_min = abs(end.plane_value - bounds[0, end.axis])
+        dist_max = abs(end.plane_value - bounds[1, end.axis])
+        side = "min" if dist_min < dist_max else "max"
+        label = f"{axis_to_plane[end.axis]}_{side}{axis_to_label[end.axis]}"
+        axis_sign = -1.0 if side == "min" else 1.0
+        labeled[label] = (end, axis_sign)
+
+    unknown = sorted(set(plane_targets) - set(labeled))
+    if unknown:
+        available = ", ".join(sorted(labeled))
+        unknown_str = ", ".join(unknown)
+        raise ValueError(f"Unknown outlet labels: {unknown_str}. Available: {available}.")
+
+    if extension_sections < 2:
+        raise ValueError("extension_sections must be >= 2.")
+
+    scale = float(np.linalg.norm(bounds[1] - bounds[0]))
+    snap_tol = max(1e-6, 1e-6 * scale)
+
+    # Import here to avoid pulling in taper helpers unless needed.
+    from .taper_stl_end import add_tapered_extension
+
+    mesh_out = mesh
+    for label, target_value in plane_targets.items():
+        end, axis_sign = labeled[label]
+        axis = end.axis
+        target = float(target_value)
+        delta = target - float(end.plane_value)
+        if abs(delta) <= snap_tol:
+            mesh_out.vertices[end.loop, axis] = target
+            if verbose:
+                print(f"[extend] {label}: snapped to {target:.6f}")
+            continue
+
+        if delta * axis_sign > 0:
+            direction = np.zeros(3, dtype=float)
+            direction[axis] = axis_sign
+            length = abs(delta)
+            if verbose:
+                print(f"[extend] {label}: extending by {length:.6f} to {target:.6f}")
+            mesh_out = add_tapered_extension(
+                mesh_out,
+                end.loop,
+                direction,
+                length_mm=length,
+                target_scale=1.0,
+                n_sections=extension_sections,
+                profile="linear",
+            )
+        else:
+            mesh_out.vertices[end.loop, axis] = target
+            if verbose:
+                print(f"[extend] {label}: target is inward; snapped to {target:.6f}")
+
+    mesh_out.export(str(output_stl))
+    if verbose:
+        print(f"[extend] Wrote outlet-extended STL: {output_stl}")
 
 
 def repair_surface_four_open_ends(

@@ -31,9 +31,10 @@ with the deformed partner geometry, then caps the four axis-aligned outlets for 
    Z=0, triangulate, and clean.
 8. **Taper an outlet**: run `taper_stl_end` on the clipped STL to extrude and shrink a chosen open
    end (e.g., `XZ_minY`, `YZ_maxX`, `XY_minZ`), controlling length, number of segments, and scale.
-9. **Repair via voxel remesh**: run `pipeline/repair.py` to cap → voxelize → marching cubes and
-   reopen the 4 outlets, producing a cleaned open STL in the temp folder.
-10. **Cap outlets**: run `pipeline/cap.py` to fan-cap the four detected axis-aligned loops and
+9. **Align outlets (optional)**: extend/snap-align open ends to `outlet_plane_targets` if provided.
+10. **Repair via voxel remesh**: run `pipeline/repair.py` to cap → voxelize → marching cubes and
+    reopen the 4 outlets, producing a cleaned open STL in the temp folder.
+11. **Cap outlets**: run `pipeline/cap.py` to fan-cap the four detected axis-aligned loops and
     report watertightness, writing the final capped STL `sim_<hash>.stl` in `output_dir`.
 
 Temporary artifacts live in a per-run temp directory under `output_dir` (prefix `sim_<hash>_tmp_`)

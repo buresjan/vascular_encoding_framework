@@ -24,7 +24,7 @@ from .cap import CapReport, cap_four_open_axis_aligned_ends
 from .bump import load_encoding
 from .deform import deform_rim_to_target
 from .mesh_ops import append_meshes, clip_bottom, hash_params, stl_from_vtp
-from .repair import repair_surface_four_open_ends
+from .repair import extend_open_ends_to_planes, repair_surface_four_open_ends
 from .rim import extract_rim
 from .taper_stl_end import taper_stl_end
 from .transformations import (
@@ -211,6 +211,26 @@ def _taper_selected_end(
     )
 
 
+def _extend_outlets_to_planes(
+    tapered: Path,
+    *,
+    outlet_plane_targets: dict[str, float] | None,
+    plane_range_tol: float | None,
+    merge_digits: int,
+    verbose: bool,
+):
+    if not outlet_plane_targets:
+        return
+    extend_open_ends_to_planes(
+        input_stl=tapered,
+        output_stl=tapered,
+        plane_targets=outlet_plane_targets,
+        plane_range_tol=plane_range_tol,
+        merge_digits=merge_digits,
+        verbose=verbose,
+    )
+
+
 def _repair_and_save(
     tapered: Path,
     repaired_out: Path,
@@ -274,6 +294,7 @@ def run_pipeline(
     taper_length_mm: float = 14.0,
     taper_target_scale: float = 0.5,
     taper_sections: int = 24,
+    outlet_plane_targets: dict[str, float] | None = None,
     repair_pitch: float | None = None,
     repair_closing_radius: int = 1,
     repair_target_voxels_min_dim: int = 80,
@@ -305,7 +326,7 @@ def run_pipeline(
     4) Deform partner STL to match new rim.
     5) Append partner and transformed STLs.
     6) Clip bottom, rebase to Z=0.
-    7) Taper a chosen open end on the clipped STL.
+    7) Taper a chosen open end on the clipped STL, optionally extend outlets to target planes.
     8) Repair merged surface while keeping the 4 outlets open via voxel remeshing.
     9) Cap the 4 axis-aligned outlets and report watertightness of the final STL.
 
@@ -318,6 +339,8 @@ def run_pipeline(
       among YZ_minX/YZ_maxX/XZ_minY/XZ_maxY/XY_minZ/XY_maxZ.
     - taper_length_mm / taper_target_scale / taper_sections control taper length, final scale, and
       the number of interpolation segments.
+    - outlet_plane_targets can override outlet plane positions (labels: YZ_minX/XZ_minY/XY_minZ/XY_maxZ)
+      by extending the open ends to those planes before repair.
     - set keep_temp_files=False to delete the per-run temp folder once the final STL is saved.
     """
     bump_specs = normalize_bump_specs(
@@ -350,6 +373,7 @@ def run_pipeline(
         taper_length_mm=taper_length_mm,
         taper_target_scale=taper_target_scale,
         taper_sections=taper_sections,
+        outlet_plane_targets=outlet_plane_targets,
         repair_pitch=repair_pitch,
         repair_closing_radius=repair_closing_radius,
         repair_target_voxels_min_dim=repair_target_voxels_min_dim,
@@ -413,7 +437,7 @@ def run_pipeline(
         except shutil.SameFileError:
             pass
 
-    # 7) Taper the selected open end to smooth into the repair step
+    # 7) Taper the selected open end, then optionally extend outlets to target planes
     _taper_selected_end(
         paths.clipped,
         paths.tapered,
@@ -421,6 +445,13 @@ def run_pipeline(
         taper_length_mm=taper_length_mm,
         taper_target_scale=taper_target_scale,
         taper_sections=taper_sections,
+    )
+    _extend_outlets_to_planes(
+        paths.tapered,
+        outlet_plane_targets=outlet_plane_targets,
+        plane_range_tol=repair_plane_range_tol,
+        merge_digits=repair_merge_digits,
+        verbose=repair_verbose,
     )
     if tapered_output is not None:
         tapered_output = Path(tapered_output)
