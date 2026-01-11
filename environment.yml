@@ -16,8 +16,8 @@ dependencies:
   - scooby
   - typing-extensions
   - requests
-  - pyvista=0.44.*
-  - vtk=9.3.*
+  - pyvista=0.45.*
+  - vtk>=9.4.2,<9.5.0
 
   # Dev tools (optional; remove if you don’t want them in the env)
   - pre-commit=4.1.0
