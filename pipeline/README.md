@@ -9,7 +9,8 @@ This subfolder holds the minimal building blocks to:
 
 ### Inputs
 - Ground truth (unchanged): `sim_conduit/Encoding/encoding.vtm`, `sim_conduit/Encoding/vcs_map.vtp`
-- Transform controls: `bumps` (list of bump dicts) or the single `tau0`/`theta0`/`bump_amp` triplet,
+- Transform controls: `bumps` (list of bump dicts) or the single `tau0`/`theta0`/`bump_amp` triplet
+  (if `bumps` is empty or omitted, the single-bump values are used when `bump_amp != 0`),
   `size_scale`, `straighten_strength`/`straighten_exponent`/`straighten_preserve`, `rho_min`,
   `radius_fit_laplacian`
 - Partner assets: `not_conduit_extruded_canon.stl`, `basic_loop_canon.vtp`
@@ -34,6 +35,7 @@ final_path, uid = run_pipeline(
     straighten_preserve=4,    # keep first/last control points fixed (keeps tau=0 rim normal)
     rho_min=1e-3,
     radius_fit_laplacian=1e-3,
+    offset_xy=(0.0, 0.0),  # optional XY translation applied before rim extraction
     rim_tol=1e-3,
     deform_r1=5.0,
     deform_r2=20.0,
@@ -101,10 +103,13 @@ merges its own defaults with `pipeline.run_pipeline` defaults.
   Also used as the default `sigma_t` for `bumps` entries.
 - `sigma_theta` (float, default 0.35): Gaussian width for bumps along theta (radians). Also used
   as the default `sigma_theta` for `bumps` entries.
-- `bumps` (list[dict] | null, default two sample bumps): Optional list of bump specs. If provided,
-  each entry can include `tau0`, `theta0`, `amp`, `sigma_t`, `sigma_theta`. Missing fields fall
-  back to the single-bump defaults above, and zero-amplitude bumps are skipped. Use `[]` to
-  disable bumps entirely.
+- `bumps` (list[dict] | null, default two sample bumps): Optional list of bump specs. If provided
+  and non-empty, each entry can include `tau0`, `theta0`, `amp`, `sigma_t`, `sigma_theta`. Missing
+  fields fall back to the single-bump defaults above, and zero-amplitude bumps are skipped. If
+  `bumps` is omitted, null, or an empty list, the pipeline falls back to the single-bump
+  parameters (`tau0`/`theta0`/`bump_amp` and widths); if `bump_amp` is 0, no bumps are applied. To
+  force no bumps while keeping a non-zero `bump_amp`, pass a non-empty `bumps` list with explicit
+  `amp: 0.0` entries.
 - `size_scale` (float, default 0.9): Uniform scale factor on the radius field (rho). Must be > 0.
 - `straighten_strength` (float, default 0.15): Strength of centerline straightening in [0, 1].
   0 leaves the centerline unchanged; 1 fully projects it to the end-to-end chord.
@@ -115,6 +120,8 @@ merges its own defaults with `pipeline.run_pipeline` defaults.
 - `rho_min` (float, default 0.001): Clamp on the minimum rho value to avoid degenerate radii.
 - `radius_fit_laplacian` (float, default 0.001): Laplacian penalty when fitting a new radius
   spline after applying bumps (higher => smoother radius field).
+- `offset_xy` (list[float] | tuple[float], default [0.0, 0.0]): XY translation applied to the
+  transformed VTP before rim extraction (does not change the saved encoding output).
 
 #### Rim extraction and partner deformation
 - `rim_tol` (float, default 0.001): Tolerance around tau=0 used to extract the rim; increase if
@@ -172,9 +179,9 @@ merges its own defaults with `pipeline.run_pipeline` defaults.
 
 ### What it does
 1. Loads saved encoding metadata and rebuilds the centerline and radius splines.
-2. Applies multi-bump/scale/straighten transforms (preserving the tau=0 rim normal), writes a
-   transformed VTP + preview PNG (temp). If `keep_temp_files=True`, also saves
-   `sim_<hash>_encoding.vtm` to `output_dir`.
+2. Applies multi-bump/scale/straighten transforms (preserving the tau=0 rim normal), then applies
+   the optional XY offset, writing a transformed VTP + preview PNG (temp). If `keep_temp_files=True`,
+   also saves `sim_<hash>_encoding.vtm` to `output_dir`.
 3. Extracts the tau≈0 rim from the transformed map using `rim_tol`.
 4. Converts the transformed map to STL.
 5. Deforms the partner STL so its rim matches the transformed rim (`r1`/`r2` control falloff).

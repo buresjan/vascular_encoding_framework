@@ -9,6 +9,7 @@ with the deformed partner geometry, then caps the four axis-aligned outlets for 
   for multi-bump runs
 - Global transforms: `size_scale` (rho scaling), `straighten_strength`/`straighten_exponent`/
   `straighten_preserve` (centerline straightening while keeping the tau=0 rim normal)
+- Optional XY translation: `offset_xy` (applied to the transformed VTP before rim extraction)
 - Radius controls: `rho_min` clamp to avoid degenerate radii, `radius_fit_laplacian` smoothing when
   fitting a spline to the bumped rho field
 - Existing ground-truth data: `sim_conduit/Encoding/encoding.vtm`, `sim_conduit/Encoding/vcs_map.vtp`
@@ -20,8 +21,8 @@ with the deformed partner geometry, then caps the four axis-aligned outlets for 
 1. **Build encoding primitives**: load the saved spline metadata and reconstruct the canonical
    centerline and radius surfaces.
 2. **Apply VCS transforms**: optional multi-bumps, global rho scale, and centerline straightening
-   (tau=0 rim normal preserved) -> transformed VTP, preview PNG, and (if `keep_temp_files=True`) a
-   saved encoding `sim_<hash>_encoding.vtm` in `output_dir`.
+   (tau=0 rim normal preserved), then apply the optional XY offset -> transformed VTP, preview PNG,
+   and (if `keep_temp_files=True`) a saved encoding `sim_<hash>_encoding.vtm` in `output_dir`.
 3. **Extract rim**: pull the tau≈0 rim from the transformed VTP (`rim.extract_rim`) using `rim_tol`.
 4. **STL export**: convert the transformed VTP to STL for downstream use.
 5. **Deform partner**: deform `not_conduit_extruded_canon.stl` so its rim matches the new rim
@@ -63,6 +64,7 @@ final_path, uid = run_pipeline(
     straighten_preserve=4,    # keep first/last control points fixed (preserves rim normal)
     rho_min=1e-3,             # clamp rho to avoid degenerate geometry
     radius_fit_laplacian=1e-3,
+    offset_xy=(0.0, 0.0),  # optional XY translation applied before rim extraction
     rim_tol=1e-3,
     deform_r1=5.0,
     deform_r2=20.0,

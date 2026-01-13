@@ -119,6 +119,27 @@ def _build_encoding_primitives(encoding_path: Path):
     return cl_meta, rad_meta
 
 
+def _normalize_offset_xy(offset_xy: Sequence[float] | None) -> tuple[float, float]:
+    if offset_xy is None:
+        return (0.0, 0.0)
+    if isinstance(offset_xy, (str, bytes)):
+        raise TypeError("offset_xy must be a 2-element sequence like [dx, dy].")
+    if len(offset_xy) != 2:
+        raise ValueError("offset_xy must have exactly 2 values (dx, dy).")
+    dx, dy = offset_xy
+    return (float(dx), float(dy))
+
+
+def _apply_xy_offset(vtp_path: Path, *, offset_xy: tuple[float, float]) -> None:
+    dx, dy = offset_xy
+    if dx == 0.0 and dy == 0.0:
+        return
+    mesh = pv.read(str(vtp_path))
+    mesh.points[:, 0] += dx
+    mesh.points[:, 1] += dy
+    mesh.save(str(vtp_path))
+
+
 def _apply_transformations(
     cl_meta: dict,
     rad_meta: dict,
@@ -286,6 +307,7 @@ def run_pipeline(
     straighten_preserve: int = 4,
     rho_min: float = 1e-3,
     radius_fit_laplacian: float = 1e-3,
+    offset_xy: Sequence[float] | None = (0.0, 0.0),
     rim_tol: float = 1e-3,
     deform_r1: float = 5.0,
     deform_r2: float = 20.0,
@@ -320,7 +342,7 @@ def run_pipeline(
 
     Steps:
     1) Apply VCS transforms (multi-bump, global scale, straightening) to build a new encoding +
-       VCS map + preview PNG.
+       VCS map + preview PNG, then optionally translate the VTP in XY.
     2) Extract rim at tau≈0 from the transformed VTP.
     3) Convert transformed VTP to STL.
     4) Deform partner STL to match new rim.
@@ -351,6 +373,7 @@ def run_pipeline(
         sigma_t=sigma_t,
         sigma_theta=sigma_theta,
     )
+    offset_xy = _normalize_offset_xy(offset_xy)
 
     params = dict(
         tau0=tau0,
@@ -365,6 +388,7 @@ def run_pipeline(
         straighten_preserve=straighten_preserve,
         rho_min=rho_min,
         radius_fit_laplacian=radius_fit_laplacian,
+        offset_xy=offset_xy,
         rim_tol=rim_tol,
         deform_r1=deform_r1,
         deform_r2=deform_r2,
@@ -402,6 +426,7 @@ def run_pipeline(
         rho_min=rho_min,
         radius_fit_laplacian=radius_fit_laplacian,
     )
+    _apply_xy_offset(paths.bumped_vtp, offset_xy=offset_xy)
 
     # 2-3) Rim extraction and STL conversion
     _extract_rim_and_export_stl(

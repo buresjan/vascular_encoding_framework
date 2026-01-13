@@ -46,6 +46,7 @@ DEFAULT_RUN_KWARGS: Dict[str, Any] = {
     "straighten_preserve": 5,
     "rho_min": 1e-3,
     "radius_fit_laplacian": 1e-3,
+    "offset_xy": (0.0, 0.0),
     "rim_tol": 1e-3,
     "deform_r1": 5.0,
     "deform_r2": 20.0,
